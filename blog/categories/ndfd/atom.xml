@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: ndfd | Malthusian Flytrap]]></title>
+  <link href="http://shahin.github.com/blog/categories/ndfd/atom.xml" rel="self"/>
+  <link href="http://shahin.github.com/"/>
+  <updated>2013-03-10T13:24:28-07:00</updated>
+  <id>http://shahin.github.com/</id>
+  <author>
+    <name><![CDATA[Shahin Saneinejad]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Weather Forecasts in PostGIS]]></title>
+    <link href="http://shahin.github.com/blog/2013/03/10/weather-forecasts-in-postgis/"/>
+    <updated>2013-03-10T12:56:00-07:00</updated>
+    <id>http://shahin.github.com/blog/2013/03/10/weather-forecasts-in-postgis</id>
+    <content type="html"><![CDATA[<p>Weather forecast data is fun to analyze, but the huge array of specialized GIS data sources and representations can make it hard to get started. Here, we'll walk through a simple way to get NOAA forecast data stored locally in a PostGIS database.</p>
+
+<h2>Install PostGIS</h2>
+
+<p>PostGIS is a widely-used spatial database built on the popular PostgreSQL database. On a Mac, <a href="http://postgresapp.com/">Postgres.app</a> makes it dead simple to install PostgreSQL and the PostGIS extension in one fell swoop.</p>
+
+<h2>Download Forecast Data</h2>
+
+<p>NOAA makes forecast data available through the <a href="http://www.nws.noaa.gov/ndfd/">National Digital Forecast Database (NDFD)</a>. They provide <a href="http://graphical.weather.gov/xml/rest.php">a RESTful web service</a> for requesting XML forecasts on small geographic regions, but we want nationwide data. Current nationwide forecasts are available in GRIB2 format on the <a href="http://www.nws.noaa.gov/ndfd/anonymous_ftp.htm">NDFD's FTP servers</a>.</p>
+
+<p>Download the probability-of-precipitation field for the <a href="ftp://tgftp.nws.noaa.gov/SL.us008001/ST.opnl/DF.gr2/DC.ndfd/AR.conus/VP.001-003/">current forecast</a>:</p>
+
+<p><code>bash
+wget ftp://tgftp.nws.noaa.gov/SL.us008001/ST.opnl/DF.gr2/DC.ndfd/AR.conus/VP.001-003/ds.pop12.bin
+</code></p>
+
+<p>The remaining steps below should work equally well with other forecast data fields listed in the same folder.</p>
+
+<h2>Reformat Data as CSV</h2>
+
+<p>GRIB2 is a compressed data format that most non-meteorological tools (including Postgres) don't understand. We'll take the path of least resistance by first converting it to a simple CSV using the <a href="http://www.cpc.ncep.noaa.gov/products/wesley/wgrib2/">wgrib2</a> tool. For the MacPorts-averse, it can be compiled locally from source with default options:</p>
+
+<p><code>bash
+tar xzf wgrib2.tgz.v1.9.7a
+cd grib2
+make
+</code></p>
+
+<p>Conversion from GRIB2 to CSV is now a one-liner:</p>
+
+<p><code>bash
+wgrib2 ds.pop12.bin -csv pop12.csv
+</code></p>
+
+<h2>Import into Postgres</h2>
+
+<p>First, create a new database to store our forecasts and enable the PostGIS extension:</p>
+
+<p><code>sql
+CREATE DATABASE weather;
+\connect weather;
+CREATE EXTENSION postgis;
+</code></p>
+
+<p>Next, we need to create table to hold our downloaded forecast data and a new spatial attribute. PostGIS provides both Geometry and Geography data types. The Geometry type offers better performance and advanced features at the expense of accuracy on large scales. Since our data is nationwide, we'll opt for <a href="http://postgis.net/docs/manual-2.0/using_postgis_dbmanagement.html#PostGIS_Geography">the Geography type</a>:</p>
+
+<p><code>sql
+create table pop(
+  id serial not null,
+  start_forecast_utc timestamp,
+  end_forecast_utc timestamp,
+  field varchar(4),
+  field_level varchar(64),
+  longitude real,
+  latitude real,
+  grid_value real,
+  long_lat geography(point,4326)
+);
+</code></p>
+
+<p>Finally, import the CSV and populate the spatial attribute as a function of longitude and latitude coordinates:</p>
+
+<p>```sql
+copy pop (
+  start_forecast_utc,
+  end_forecast_utc,
+  field,
+  field_level,
+  longitude,
+  latitude,
+  grid_value
+) from 'pop12.csv' with (format csv);</p>
+
+<p>update pop
+  set long_lat = ST_GeographyFromText('SRID=4326;POINT(' || longitude || ' ' || latitude || ')');
+```</p>
+
+<h2>Run a Test Query</h2>
+
+<p>Now we can answer questions like "Where will it rain in between San Francisco and LA?"</p>
+
+<p>```sql
+select
+  start_forecast_utc,
+  latitude,
+  longitude,
+  grid_value as prob_precip
+from pop where
+  ST_Distance ('LINESTRING(-122.420654 37.781569, -118.168945 33.988918)'::geography, long_lat) &lt; 8000 and
+  grid_value > 90;</p>
+
+<p>```</p>
+
+<p>Take a second to bask in success: NOAA forecast data is ready for spatial analysis in PostgreSQL.</p>
+]]></content>
+  </entry>
+  
+</feed>
