@@ -4,7 +4,7 @@
   <title><![CDATA[Category: ndfd | Malthusian Flytrap]]></title>
   <link href="http://shahin.github.com/blog/categories/ndfd/atom.xml" rel="self"/>
   <link href="http://shahin.github.com/"/>
-  <updated>2013-03-10T21:05:26-07:00</updated>
+  <updated>2013-03-14T19:45:10-07:00</updated>
   <id>http://shahin.github.com/</id>
   <author>
     <name><![CDATA[Shahin Saneinejad]]></name>
@@ -67,8 +67,8 @@ CREATE EXTENSION postgis;
 <p><code>sql
 create table pop(
   id serial not null,
+  analysis_utc timestamp,
   start_forecast_utc timestamp,
-  end_forecast_utc timestamp,
   field varchar(4),
   field_level varchar(64),
   longitude real,
@@ -82,8 +82,8 @@ create table pop(
 
 <p>```sql
 copy pop (
+  analysis_utc,
   start_forecast_utc,
-  end_forecast_utc,
   field,
   field_level,
   longitude,
