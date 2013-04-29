@@ -4,7 +4,7 @@
   <title><![CDATA[Malthusian Flytrap]]></title>
   <link href="http://shahin.github.com/atom.xml" rel="self"/>
   <link href="http://shahin.github.com/"/>
-  <updated>2013-04-28T18:57:08-07:00</updated>
+  <updated>2013-04-28T18:58:27-07:00</updated>
   <id>http://shahin.github.com/</id>
   <author>
     <name><![CDATA[Shahin Saneinejad]]></name>
@@ -178,7 +178,7 @@
 </span></code></pre></td></tr></table></div></figure>
 
 
-<p>Yeah, it rained &#8211; but only barely (those grid_values are in kg/m<sup>2).</sup> A good day.</p>
+<p>Yeah, it rained &#8211; but only barely (those grid_values are in kg/m<sup>2</sup> ). A good day.</p>
 ]]></content>
   </entry>
   
