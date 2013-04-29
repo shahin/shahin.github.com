@@ -4,7 +4,7 @@
   <title><![CDATA[Malthusian Flytrap]]></title>
   <link href="http://shahin.github.com/atom.xml" rel="self"/>
   <link href="http://shahin.github.com/"/>
-  <updated>2013-03-14T19:45:10-07:00</updated>
+  <updated>2013-04-28T18:57:08-07:00</updated>
   <id>http://shahin.github.com/</id>
   <author>
     <name><![CDATA[Shahin Saneinejad]]></name>
@@ -12,6 +12,175 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Weather Observations in PostGIS]]></title>
+    <link href="http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis/"/>
+    <updated>2013-04-28T18:55:00-07:00</updated>
+    <id>http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis</id>
+    <content type="html"><![CDATA[<p>Behind today&#8217;s high temperature forecast lies an immense number of weather observations. Ground-based radar, satellite instruments, and weather stations measure hundreds of elements around the clock. Pulling it all together would be tough. The NCEP runs the whole mess through the <a href="http://www.ncdc.noaa.gov/model-data/north-american-regional-reanalysis-narr">North American Regional Reanalysis</a> model for us, producing an evenly-spaced 32km grid of standardized data points that spans the continent.</p>
+
+<p>Here we&#8217;ll obtain NARR data on rainfall observations, load it into PostGIS, and perform a simple analysis.</p>
+
+<h2>Download NARR Data</h2>
+
+<p>The NCEP makes <a href="http://nomads.ncdc.noaa.gov/data.php?name=access#narr_datasets">several different outputs</a> from the NARR model available. We want the NARR-A file that models observations over 3-hour windows:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'>curl http://nomads.ncdc.noaa.gov/data/narr/201303/20130316/narr-a_221_20130316_0000_000.grb -o narr-a_221_20130316_0000_000.grb
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The NWS provides a command-line tool to inspect and manipulate GRIB files called <a href="http://www.nws.noaa.gov/mdl/degrib">degrib</a>, which compiles on OS X 10.8. Let&#8217;s use degrib to take a quick look at the GRIB archive&#8217;s contents. If all&#8217;s gone well so far, the following command should list all 423 fields available in the NARR dataset:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'>degrib -in narr-a_221_20130316_0000_000.grb -I
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Let&#8217;s pull the accumulated precipitation data (APCP, field 380) and convert it to a CSV that we can read:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'>degrib -in narr-a_221_20130316_0000_000.grb -C -msg 380 -Csv -out apcp.csv
+</span><span class='line'>head apcp.csv
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which should produce a listing in the console similar to this one:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'>   X,    Y,    Latitude,   Longitude, APCP_201303160300
+</span><span class='line'>   1,    1,    1.000000, -145.500000,        0.014
+</span><span class='line'>   2,    1,    1.104305, -145.315022,        0.040
+</span><span class='line'>   3,    1,    1.208293, -145.129528,        0.063
+</span><span class='line'>   4,    1,    1.311960, -144.943518,        0.116
+</span><span class='line'>   5,    1,    1.415303, -144.756992,        0.161
+</span><span class='line'>   6,    1,    1.518316, -144.569951,        0.229
+</span><span class='line'>   7,    1,    1.620998, -144.382394,        0.232
+</span><span class='line'>   8,    1,    1.723343, -144.194323,        0.231
+</span><span class='line'>   9,    1,    1.825349, -144.005737,        0.209
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Simply having a list of the data points in a CSV file, however, isn&#8217;t very useful. If we want to grab all points on a given path or close to a given latitude and longitude, we&#8217;re left scanning the entire file and doing tedious arithmetic on each observation. Instead, we&#8217;ll load the data into PostGIS.</p>
+
+<h2>Load Into PostGIS</h2>
+
+<p>Thanks to its support for the <a href="http://postgis.net/docs/manual-2.0/using_postgis_dbmanagement.html#PostGIS_Geography">Geography type</a>, we won&#8217;t be needing the ordinal X and Y coordinates. Write a slimmer file that keeps only the third-through-fifth columns:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'>cut -d, -f3-5 apcp.csv &gt; apcp_narrow.csv
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now fire up Postgres and run the interactive psql terminal. First, enable the PostGIS extension on the database. At the psql prompt:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">create</span> <span class="k">database</span> <span class="n">weather</span><span class="p">;</span>
+</span><span class='line'><span class="err">\</span><span class="k">connect</span> <span class="n">weather</span><span class="p">;</span>
+</span><span class='line'><span class="k">create</span> <span class="n">extension</span> <span class="n">postgis</span><span class="p">;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Next, we&#8217;ll create a new table with a Geography column. The Geography data type allows us to use a special set of spatial functions for rapidly and accurately calculating distance on the surface of a globe.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">create</span> <span class="k">table</span> <span class="n">apcp</span> <span class="p">(</span>
+</span><span class='line'>  <span class="n">id</span> <span class="nb">serial</span> <span class="k">not</span> <span class="k">null</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">latitude</span> <span class="nb">real</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">longitude</span> <span class="nb">real</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">grid_value</span> <span class="nb">real</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">long_lat</span> <span class="n">geography</span><span class="p">(</span><span class="n">point</span><span class="p">,</span><span class="mi">4326</span><span class="p">)</span>
+</span><span class='line'><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Load observations from the CSV into the table:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">copy</span> <span class="n">apcp</span><span class="p">(</span>
+</span><span class='line'>  <span class="n">latitude</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">longitude</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">grid_value</span>
+</span><span class='line'><span class="p">)</span> <span class="k">from</span> <span class="s1">&#39;/full/path/to/apcp_narrow.csv&#39;</span> <span class="k">with</span> <span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">format</span> <span class="n">csv</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Notice that we haven&#8217;t loaded anything into the long_lat column. This is the Geography column and must be computed by PostGIS using the longitude and latitude values we read in from the CSV file.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">update</span> <span class="n">apcp</span>
+</span><span class='line'>  <span class="k">set</span> <span class="n">long_lat</span> <span class="o">=</span> <span class="n">ST_GeographyFromText</span><span class="p">(</span><span class="s1">&#39;SRID=4326;POINT(&#39;</span> <span class="o">||</span> <span class="n">longitude</span> <span class="o">||</span> <span class="s1">&#39; &#39;</span> <span class="o">||</span> <span class="n">latitude</span> <span class="o">||</span> <span class="s1">&#39;)&#39;</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Did it Rain Within 50 Kilometers of Seattle? </h2>
+
+<p>Let&#8217;s find out:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">select</span> <span class="o">*</span>
+</span><span class='line'><span class="k">from</span> <span class="n">apcp</span>
+</span><span class='line'><span class="k">where</span>
+</span><span class='line'>  <span class="n">grid_value</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">and</span>
+</span><span class='line'>  <span class="n">st_distance</span><span class="p">(</span><span class="n">long_lat</span><span class="p">,</span> <span class="n">st_geomfromtext</span><span class="p">(</span><span class="s1">&#39;POINT(-122.3331 47.6097)&#39;</span><span class="p">,</span><span class="mi">4326</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mi">50000</span>
+</span><span class='line'><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">id</span>   <span class="o">|</span> <span class="n">latitude</span> <span class="o">|</span> <span class="n">longitude</span> <span class="o">|</span> <span class="n">grid_value</span> <span class="o">|</span>                      <span class="n">long_lat</span>
+</span><span class='line'><span class="c1">-------+----------+-----------+------------+----------------------------------------------------</span>
+</span><span class='line'> <span class="mi">47951</span> <span class="o">|</span>  <span class="mi">47</span><span class="p">.</span><span class="mi">3829</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">844</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">004</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E6100000BC74931804B65EC0B7D100DE02B14740</span>
+</span><span class='line'> <span class="mi">47952</span> <span class="o">|</span>  <span class="mi">47</span><span class="p">.</span><span class="mi">4434</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">422</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">002</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E61000005EBA490C029B5EC0F085C954C1B84740</span>
+</span><span class='line'> <span class="mi">47953</span> <span class="o">|</span>  <span class="mi">47</span><span class="p">.</span><span class="mi">5023</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">121</span><span class="p">.</span><span class="mi">999</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">015</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E61000000E2DB29DEF7F5EC0F163CC5D4BC04740</span>
+</span><span class='line'> <span class="mi">48300</span> <span class="o">|</span>   <span class="mi">47</span><span class="p">.</span><span class="mi">668</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">935</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">005</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E6100000A4703D0AD7BB5EC02FDD240681D54740</span>
+</span><span class='line'> <span class="mi">48301</span> <span class="o">|</span>  <span class="mi">47</span><span class="p">.</span><span class="mi">7289</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">511</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">002</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E610000062105839B4A05EC0F7065F984CDD4740</span>
+</span><span class='line'> <span class="mi">48302</span> <span class="o">|</span>  <span class="mi">47</span><span class="p">.</span><span class="mi">7881</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">086</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">006</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E61000002FDD240681855EC022FDF675E0E44740</span>
+</span><span class='line'> <span class="mi">48650</span> <span class="o">|</span>  <span class="mi">48</span><span class="p">.</span><span class="mi">0143</span> <span class="o">|</span>  <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">601</span> <span class="o">|</span>      <span class="mi">0</span><span class="p">.</span><span class="mi">001</span> <span class="o">|</span> <span class="mi">0101000020</span><span class="n">E61000005839B4C876A65EC0992A1895D4014840</span>
+</span><span class='line'><span class="p">(</span><span class="mi">7</span> <span class="k">rows</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Yeah, it rained &#8211; but only barely (those grid_values are in kg/m<sup>2).</sup> A good day.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Weather Forecasts in PostGIS]]></title>

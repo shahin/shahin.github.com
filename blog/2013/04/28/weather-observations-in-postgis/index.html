@@ -5,7 +5,7 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Malthusian Flytrap</title>
+  <title>Weather Observations in PostGIS - Malthusian Flytrap</title>
   <meta name="author" content="Shahin Saneinejad">
 
   
@@ -18,7 +18,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://shahin.github.com">
+  <link rel="canonical" href="http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   <link href="/atom.xml" rel="alternate" title="Malthusian Flytrap" type="application/atom+xml">
@@ -75,15 +75,12 @@
 </nav>
   <div id="main">
     <div id="content">
-      <div class="blog-index">
+      <div>
+<article class="hentry" role="article">
   
-  
-  
-    <article>
-      
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2013/04/28/weather-observations-in-postgis/">Weather Observations in PostGIS</a></h1>
+      <h1 class="entry-title">Weather Observations in PostGIS</h1>
     
     
       <p class="meta">
@@ -106,7 +103,7 @@
   </header>
 
 
-  <div class="entry-content"><p>Behind today&#8217;s high temperature forecast lies an immense number of weather observations. Ground-based radar, satellite instruments, and weather stations measure hundreds of elements around the clock. Pulling it all together would be tough. The NCEP runs the whole mess through the <a href="http://www.ncdc.noaa.gov/model-data/north-american-regional-reanalysis-narr">North American Regional Reanalysis</a> model for us, producing an evenly-spaced 32km grid of standardized data points that spans the continent.</p>
+<div class="entry-content"><p>Behind today&#8217;s high temperature forecast lies an immense number of weather observations. Ground-based radar, satellite instruments, and weather stations measure hundreds of elements around the clock. Pulling it all together would be tough. The NCEP runs the whole mess through the <a href="http://www.ncdc.noaa.gov/model-data/north-american-regional-reanalysis-narr">North American Regional Reanalysis</a> model for us, producing an evenly-spaced 32km grid of standardized data points that spans the continent.</p>
 
 <p>Here we&#8217;ll obtain NARR data on rainfall observations, load it into PostGIS, and perform a simple analysis.</p>
 
@@ -268,22 +265,16 @@
 
 <p>Yeah, it rained &#8211; but only barely (those grid_values are in kg/m<sup>2).</sup> A good day.</p>
 </div>
-  
-  
 
 
-    </article>
-  
-  
-    <article>
+  <footer>
+    <p class="meta">
       
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2013/03/10/weather-forecasts-in-postgis/">Weather Forecasts in PostGIS</a></h1>
-    
-    
-      <p class="meta">
-        
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Shahin Saneinejad</span></span>
+
+      
 
 
 
@@ -295,158 +286,38 @@
   
 
 
-<time datetime="2013-03-10T12:56:00-07:00" pubdate data-updated="true">Mar 10<span>th</span>, 2013</time>
-        
-      </p>
+<time datetime="2013-04-28T18:55:00-07:00" pubdate data-updated="true">Apr 28<span>th</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/data/'>data</a>, <a class='category' href='/blog/categories/guide/'>guide</a>, <a class='category' href='/blog/categories/narr/'>narr</a>, <a class='category' href='/blog/categories/postgis/'>postgis</a>, <a class='category' href='/blog/categories/postgresql/'>postgresql</a>, <a class='category' href='/blog/categories/weather/'>weather</a>
+  
+</span>
+
+
+    </p>
     
-  </header>
-
-
-  <div class="entry-content"><p>Weather forecast data is fun to analyze, but the huge array of specialized GIS data sources and representations can make it hard to get started. Here, we&#8217;ll walk through a simple way to get NOAA forecast data stored locally in a PostGIS database.</p>
-
-<h2>Install PostGIS</h2>
-
-<p>PostGIS is a widely-used spatial database built on the popular PostgreSQL database. On a Mac, <a href="http://postgresapp.com/">Postgres.app</a> makes it dead simple to install PostgreSQL and the PostGIS extension in one fell swoop.</p>
-
-<h2>Download Forecast Data</h2>
-
-<p>NOAA makes forecast data available through the <a href="http://www.nws.noaa.gov/ndfd/">National Digital Forecast Database (NDFD)</a>. They provide <a href="http://graphical.weather.gov/xml/rest.php">a RESTful web service</a> for requesting XML forecasts on small geographic regions, but we want nationwide data. Current nationwide forecasts are available in GRIB2 format on the <a href="http://www.nws.noaa.gov/ndfd/anonymous_ftp.htm">NDFD&#8217;s FTP servers</a>.</p>
-
-<p>Download the probability-of-precipitation field for the <a href="ftp://tgftp.nws.noaa.gov/SL.us008001/ST.opnl/DF.gr2/DC.ndfd/AR.conus/VP.001-003/">current forecast</a>:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='bash'><span class='line'>wget ftp://tgftp.nws.noaa.gov/SL.us008001/ST.opnl/DF.gr2/DC.ndfd/AR.conus/VP.001-003/ds.pop12.bin
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The remaining steps below should work equally well with other forecast data fields listed in the same folder.</p>
-
-<h2>Reformat Data as CSV</h2>
-
-<p>GRIB2 is a compressed data format that most non-meteorological tools (including Postgres) don&#8217;t understand. We&#8217;ll take the path of least resistance by first converting it to a simple CSV using the <a href="http://www.cpc.ncep.noaa.gov/products/wesley/wgrib2/">wgrib2</a> tool. For the MacPorts-averse, it can be compiled locally from source with default options:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='bash'><span class='line'>tar xzf wgrib2.tgz.v1.9.7a
-</span><span class='line'><span class="nb">cd </span>grib2
-</span><span class='line'>make
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Conversion from GRIB2 to CSV is now a one-liner:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='bash'><span class='line'>wgrib2 ds.pop12.bin -csv pop12.csv
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Import into Postgres</h2>
-
-<p>First, create a new database to store our forecasts and enable the PostGIS extension:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">CREATE</span> <span class="k">DATABASE</span> <span class="n">weather</span><span class="p">;</span>
-</span><span class='line'><span class="err">\</span><span class="k">connect</span> <span class="n">weather</span><span class="p">;</span>
-</span><span class='line'><span class="k">CREATE</span> <span class="n">EXTENSION</span> <span class="n">postgis</span><span class="p">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Next, we need to create table to hold our downloaded forecast data and a new spatial attribute. PostGIS provides both Geometry and Geography data types. The Geometry type offers better performance and advanced features at the expense of accuracy on large scales. Since our data is nationwide, we&#8217;ll opt for <a href="http://postgis.net/docs/manual-2.0/using_postgis_dbmanagement.html#PostGIS_Geography">the Geography type</a>:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">create</span> <span class="k">table</span> <span class="n">pop</span><span class="p">(</span>
-</span><span class='line'>  <span class="n">id</span> <span class="nb">serial</span> <span class="k">not</span> <span class="k">null</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">analysis_utc</span> <span class="k">timestamp</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">start_forecast_utc</span> <span class="k">timestamp</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">field</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">4</span><span class="p">),</span>
-</span><span class='line'>  <span class="n">field_level</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">64</span><span class="p">),</span>
-</span><span class='line'>  <span class="n">longitude</span> <span class="nb">real</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">latitude</span> <span class="nb">real</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">grid_value</span> <span class="nb">real</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">long_lat</span> <span class="n">geography</span><span class="p">(</span><span class="n">point</span><span class="p">,</span><span class="mi">4326</span><span class="p">)</span>
-</span><span class='line'><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Finally, import the CSV and populate the spatial attribute as a function of longitude and latitude coordinates:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">copy</span> <span class="n">pop</span> <span class="p">(</span>
-</span><span class='line'>  <span class="n">analysis_utc</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">start_forecast_utc</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">field</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">field_level</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">longitude</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">latitude</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">grid_value</span>
-</span><span class='line'><span class="p">)</span> <span class="k">from</span> <span class="s1">&#39;pop12.csv&#39;</span> <span class="k">with</span> <span class="p">(</span><span class="n">format</span> <span class="n">csv</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">update</span> <span class="n">pop</span>
-</span><span class='line'>  <span class="k">set</span> <span class="n">long_lat</span> <span class="o">=</span> <span class="n">ST_GeographyFromText</span><span class="p">(</span><span class="s1">&#39;SRID=4326;POINT(&#39;</span> <span class="o">||</span> <span class="n">longitude</span> <span class="o">||</span> <span class="s1">&#39; &#39;</span> <span class="o">||</span> <span class="n">latitude</span> <span class="o">||</span> <span class="s1">&#39;)&#39;</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Run a Test Query</h2>
-
-<p>Now we can answer questions like &#8220;Where will it rain in between San Francisco and LA?&#8221;</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">select</span>
-</span><span class='line'>  <span class="n">start_forecast_utc</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">latitude</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">longitude</span><span class="p">,</span>
-</span><span class='line'>  <span class="n">grid_value</span> <span class="k">as</span> <span class="n">prob_precip</span>
-</span><span class='line'><span class="k">from</span> <span class="n">pop</span> <span class="k">where</span>
-</span><span class='line'>  <span class="n">ST_Distance</span> <span class="p">(</span><span class="s1">&#39;LINESTRING(-122.420654 37.781569, -118.168945 33.988918)&#39;</span><span class="p">::</span><span class="n">geography</span><span class="p">,</span> <span class="n">long_lat</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">8000</span> <span class="k">and</span>
-</span><span class='line'>  <span class="n">grid_value</span> <span class="o">&gt;</span> <span class="mi">90</span><span class="p">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Take a second to bask in success: NOAA forecast data is ready for spatial analysis in PostgreSQL.</p>
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis/" data-via="" data-counturl="http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis/" >Tweet</a>
+  
+  
+  
 </div>
-  
-  
 
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/03/10/weather-forecasts-in-postgis/" title="Previous Post: Weather Forecasts in PostGIS">&laquo; Weather Forecasts in PostGIS</a>
+      
+      
+    </p>
+  </footer>
+</article>
 
-    </article>
-  
-  <div class="pagination">
-    
-    <a href="/blog/archives">Blog Archives</a>
-    
-  </div>
 </div>
+
 <aside class="sidebar">
   
     <section>
@@ -470,6 +341,7 @@
 
   
 </aside>
+
 
     </div>
   </div>

@@ -4,7 +4,7 @@
   <title><![CDATA[Category: weather | Malthusian Flytrap]]></title>
   <link href="http://shahin.github.com/blog/categories/weather/atom.xml" rel="self"/>
   <link href="http://shahin.github.com/"/>
-  <updated>2013-03-14T19:45:10-07:00</updated>
+  <updated>2013-04-28T18:57:08-07:00</updated>
   <id>http://shahin.github.com/</id>
   <author>
     <name><![CDATA[Shahin Saneinejad]]></name>
@@ -12,6 +12,125 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Weather Observations in PostGIS]]></title>
+    <link href="http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis/"/>
+    <updated>2013-04-28T18:55:00-07:00</updated>
+    <id>http://shahin.github.com/blog/2013/04/28/weather-observations-in-postgis</id>
+    <content type="html"><![CDATA[<p>Behind today's high temperature forecast lies an immense number of weather observations. Ground-based radar, satellite instruments, and weather stations measure hundreds of elements around the clock. Pulling it all together would be tough. The NCEP runs the whole mess through the <a href="http://www.ncdc.noaa.gov/model-data/north-american-regional-reanalysis-narr">North American Regional Reanalysis</a> model for us, producing an evenly-spaced 32km grid of standardized data points that spans the continent.</p>
+
+<p>Here we'll obtain NARR data on rainfall observations, load it into PostGIS, and perform a simple analysis.</p>
+
+<h2>Download NARR Data</h2>
+
+<p>The NCEP makes <a href="http://nomads.ncdc.noaa.gov/data.php?name=access#narr_datasets">several different outputs</a> from the NARR model available. We want the NARR-A file that models observations over 3-hour windows:</p>
+
+<p><code>bash
+curl http://nomads.ncdc.noaa.gov/data/narr/201303/20130316/narr-a_221_20130316_0000_000.grb -o narr-a_221_20130316_0000_000.grb
+</code></p>
+
+<p>The NWS provides a command-line tool to inspect and manipulate GRIB files called <a href="http://www.nws.noaa.gov/mdl/degrib">degrib</a>, which compiles on OS X 10.8. Let's use degrib to take a quick look at the GRIB archive's contents. If all's gone well so far, the following command should list all 423 fields available in the NARR dataset:</p>
+
+<p><code>bash
+degrib -in narr-a_221_20130316_0000_000.grb -I
+</code></p>
+
+<p>Let's pull the accumulated precipitation data (APCP, field 380) and convert it to a CSV that we can read:</p>
+
+<p><code>bash
+degrib -in narr-a_221_20130316_0000_000.grb -C -msg 380 -Csv -out apcp.csv
+head apcp.csv
+</code></p>
+
+<p>Which should produce a listing in the console similar to this one:</p>
+
+<p><code>bash
+   X,    Y,    Latitude,   Longitude, APCP_201303160300
+   1,    1,    1.000000, -145.500000,        0.014
+   2,    1,    1.104305, -145.315022,        0.040
+   3,    1,    1.208293, -145.129528,        0.063
+   4,    1,    1.311960, -144.943518,        0.116
+   5,    1,    1.415303, -144.756992,        0.161
+   6,    1,    1.518316, -144.569951,        0.229
+   7,    1,    1.620998, -144.382394,        0.232
+   8,    1,    1.723343, -144.194323,        0.231
+   9,    1,    1.825349, -144.005737,        0.209
+</code></p>
+
+<p>Simply having a list of the data points in a CSV file, however, isn't very useful. If we want to grab all points on a given path or close to a given latitude and longitude, we're left scanning the entire file and doing tedious arithmetic on each observation. Instead, we'll load the data into PostGIS.</p>
+
+<h2>Load Into PostGIS</h2>
+
+<p>Thanks to its support for the <a href="http://postgis.net/docs/manual-2.0/using_postgis_dbmanagement.html#PostGIS_Geography">Geography type</a>, we won't be needing the ordinal X and Y coordinates. Write a slimmer file that keeps only the third-through-fifth columns:</p>
+
+<p><code>bash
+cut -d, -f3-5 apcp.csv &gt; apcp_narrow.csv
+</code></p>
+
+<p>Now fire up Postgres and run the interactive psql terminal. First, enable the PostGIS extension on the database. At the psql prompt:
+<code>sql
+create database weather;
+\connect weather;
+create extension postgis;
+</code></p>
+
+<p>Next, we'll create a new table with a Geography column. The Geography data type allows us to use a special set of spatial functions for rapidly and accurately calculating distance on the surface of a globe.</p>
+
+<p><code>sql
+create table apcp (
+  id serial not null,
+  latitude real,
+  longitude real,
+  grid_value real,
+  long_lat geography(point,4326)
+);
+</code></p>
+
+<p>Load observations from the CSV into the table:</p>
+
+<p><code>sql
+copy apcp(
+  latitude,
+  longitude,
+  grid_value
+) from '/full/path/to/apcp_narrow.csv' with (header, format csv);
+</code></p>
+
+<p>Notice that we haven't loaded anything into the long_lat column. This is the Geography column and must be computed by PostGIS using the longitude and latitude values we read in from the CSV file.</p>
+
+<p><code>sql
+update apcp
+  set long_lat = ST_GeographyFromText('SRID=4326;POINT(' || longitude || ' ' || latitude || ')');
+</code></p>
+
+<h2>Did it Rain Within 50 Kilometers of Seattle? </h2>
+
+<p>Let's find out:</p>
+
+<p>```sql
+select *
+from apcp
+where
+  grid_value > 0 and
+  st_distance(long_lat, st_geomfromtext('POINT(-122.3331 47.6097)',4326)) &lt; 50000
+;</p>
+
+<p>  id   | latitude | longitude | grid_value |                      long_lat                    <br/>
+-------+----------+-----------+------------+----------------------------------------------------
+ 47951 |  47.3829 |  -122.844 |      0.004 | 0101000020E6100000BC74931804B65EC0B7D100DE02B14740
+ 47952 |  47.4434 |  -122.422 |      0.002 | 0101000020E61000005EBA490C029B5EC0F085C954C1B84740
+ 47953 |  47.5023 |  -121.999 |      0.015 | 0101000020E61000000E2DB29DEF7F5EC0F163CC5D4BC04740
+ 48300 |   47.668 |  -122.935 |      0.005 | 0101000020E6100000A4703D0AD7BB5EC02FDD240681D54740
+ 48301 |  47.7289 |  -122.511 |      0.002 | 0101000020E610000062105839B4A05EC0F7065F984CDD4740
+ 48302 |  47.7881 |  -122.086 |      0.006 | 0101000020E61000002FDD240681855EC022FDF675E0E44740
+ 48650 |  48.0143 |  -122.601 |      0.001 | 0101000020E61000005839B4C876A65EC0992A1895D4014840
+(7 rows)
+```</p>
+
+<p>Yeah, it rained -- but only barely (those grid_values are in kg/m<sup>2).</sup> A good day.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Weather Forecasts in PostGIS]]></title>
